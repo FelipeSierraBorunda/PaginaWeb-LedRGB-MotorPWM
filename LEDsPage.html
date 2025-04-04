@@ -1,0 +1,84 @@
+<html><body onload="PedirValores()">
+<h2>Encendido y Apagado de LEds</h2>
+  <input type="checkbox" id="LED0" name="LED0" onchange=CambiarValor("LED0")>
+  <label id = "lblLED0" for="LED0"> LED0 Apagado</label><br>
+  <input type="checkbox" id="LED1" name="LED1" onchange=CambiarValor("LED1")>
+  <label id = "lblLED1" for="LED1"> LED1 Apagado</label><br>
+  <input type="checkbox" id="LED2" name="LED2" onchange=CambiarValor("LED2")>
+  <label id = "lblLED2" for="LED2"> LED2 Apagado</label><br>
+
+
+<script>
+function CambiarValor(N){
+    //Tipo de dato que manda mensajes al esp32
+	const xhttp = new XMLHttpRequest();
+    //Aqui escribiremos el mensaje que le enviaremos
+	var Mensaje
+    //Indica si la casilla esta enmarcada
+	let Val = document.getElementById(N).checked
+    //Si esta enmarcada...
+    if (Val == true){
+        //Cambiamos el label de la casilla
+    	document.getElementById("lbl".concat(N)).innerHTML = N.concat(" Encendido")
+        //Escribimos el mensaje que enviaremos
+        Mensaje = N.concat("=1")
+    // Si no esta enmarcada ...
+    }
+    else
+    {
+        document.getElementById("lbl".concat(N)).innerHTML = N.concat(" Apagado")
+    	Mensaje = N.concat("=0")
+    }
+	xhttp.open("POST", Mensaje);
+ 	xhttp.send();
+}
+</script>
+
+
+<script>
+setInterval(PedirValores, 1000);
+// Esta funcion se ejecuta automaticamente cada vez que se carga la pagina web
+function PedirValores() 
+{
+  const xhttp = new XMLHttpRequest();
+  // Esta función se ejecuta cuando el navegador web recibe una respuesta del ESP32 a la petición HTTP enviada
+  xhttp.onload = function() 
+  {	
+  	var Respuesta;
+  	var Valor;
+    // Respuesta recibe una cadena de texto que envia el esp32
+   	Respuesta = this.responseText;  
+    Valor = Respuesta.substr(Respuesta.indexOf("LED0"), 6);
+    if(Valor == "LED0=1")
+    {
+        // Cambiamos el estado de la casilla
+    	document.getElementById("LED0").checked = true;
+        // Cambiamos el label 
+        document.getElementById("lblLED0").innerHTML = "LED0 Encendido";
+    }
+    else{
+    	document.getElementById("LED0").checked = false;
+        document.getElementById("lblLED0").innerHTML = "LED0 Apagado";
+    }
+    Valor = Respuesta.substr(Respuesta.indexOf("LED1"), 6);
+    if(Valor == "LED1=1"){
+    	document.getElementById("LED1").checked = true;
+        document.getElementById("lblLED1").innerHTML = "LED1 Encendido";
+    }else{
+    	document.getElementById("LED1").checked = false;
+        document.getElementById("lblLED1").innerHTML = "LED1 Apagado";
+    }    
+    Valor = Respuesta.substr(Respuesta.indexOf("LED2"), 6);
+    if(Valor == "LED2=1"){
+    	document.getElementById("LED2").checked = true;
+        document.getElementById("lblLED2").innerHTML = "LED2 Encendido";
+    }else{
+    	document.getElementById("LED2").checked = false;
+        document.getElementById("lblLED2").innerHTML = "LED2 Apagado";
+    }
+  }
+  xhttp.open("POST","EnviarValoresActuales");
+  xhttp.send();
+}
+</script>
+</body></html>
