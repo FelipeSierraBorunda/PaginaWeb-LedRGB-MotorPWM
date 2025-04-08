@@ -13,15 +13,78 @@
 #include "lwip/api.h"
 #include "lwip/err.h"
 
+//Para ledc
+#include "driver/ledc.h"
+#include "driver/gpio.h"
+#include "driver/gptimer.h"
+#include "soc/ledc_reg.h"
+#include "stdio.h"
+
 #include "string.h"
 
 // En este archivo se define el nombre de la red (ssid) a la que me quiero conectar, asi como su pasword.
-#include "MyNetInfo.h"		
-// Modifica el archivo CMakeLists.txt para que diga lo siguiente:
-//idf_component_register(SRCS "main.c"
-//                    INCLUDE_DIRS "."
-//                    EMBED_FILES "favicon.ico"
-//                    EMBED_TXTFILES "LEDsPage.html")
+#include "MyNetInfo.h"	
+
+// ================================================= Constantes globales
+#define Anodo GPIO_NUM_25	
+#define LEDR GPIO_NUM_26	
+#define LEDG GPIO_NUM_33	
+#define LEDB GPIO_NUM_32	
+
+
+//================================================== Configuraciones =================================================
+// Configuracion del ledc timer
+	ledc_timer_config_t PWM_timer = 
+	    {
+	        .duty_resolution = LEDC_TIMER_8_BIT, 		// resolution of PWM duty (1024)
+	        .freq_hz = 10000,                      		// frequency of PWM signal
+	        .speed_mode = LEDC_HIGH_SPEED_MODE,      	// timer mode
+	        .timer_num = LEDC_TIMER_0,            		// timer index
+	        .clk_cfg = LEDC_APB_CLK,             		// Reloj de 80Mhz
+	    };
+	    ledc_timer_config_t PWM_timer1 = 
+	    {
+	        .duty_resolution = LEDC_TIMER_8_BIT, 		// resolution of PWM duty (1024)
+	        .freq_hz = 10000,                      		// frequency of PWM signal
+	        .speed_mode = LEDC_HIGH_SPEED_MODE,      	// timer mode
+	        .timer_num = LEDC_TIMER_1,            		// timer index
+	        .clk_cfg = LEDC_APB_CLK,             		// Reloj de 80Mhz
+	    };
+	 // Configuracion del canal del timer (cada ledc timer tiene dos canales)
+	 //Azul (blue)
+	 ledc_channel_config_t PWM_channel1 = 
+	  {
+		  .channel    = LEDC_CHANNEL_0,
+		  .duty       = 255, //Ciclo minimo de 325
+	      .gpio_num   = LEDB,
+		  .speed_mode = LEDC_HIGH_SPEED_MODE,
+		  .intr_type = LEDC_INTR_DISABLE,
+		  .hpoint     = 0,
+		  .timer_sel  = LEDC_TIMER_0
+	  };
+	  //Verde (green)
+	  ledc_channel_config_t PWM_channel2 = 
+	  {
+		  .channel    = LEDC_CHANNEL_1,
+		  .duty       = 255, //Ciclo minimo de 325
+	      .gpio_num   = LEDG,
+		  .speed_mode = LEDC_HIGH_SPEED_MODE,
+		  .intr_type = LEDC_INTR_DISABLE,
+		  .hpoint     = 0,
+		  .timer_sel  = LEDC_TIMER_0
+	  };
+	  //Rojo (Red)
+	   ledc_channel_config_t PWM_channel3= 
+	  {
+		  .channel    = LEDC_CHANNEL_2,
+		  .duty       = 255, //Ciclo minimo de 325
+	      .gpio_num   = LEDR,
+		  .speed_mode = LEDC_HIGH_SPEED_MODE,
+		  .intr_type = LEDC_INTR_DISABLE,
+		  .hpoint     = 0,
+		  .timer_sel  = LEDC_TIMER_1
+	  };
+	  
 //  ------------------------------------------------------------------------------------------------------------------------------------------------- (Interpretacion del servidor)
 const static char HTML_Header[] = "HTTP/1.1 200 OK\nContent-type: text/html\nConnection: close\n\n";	// Indicamos que el dato anterior es de tipo html 			I_______Estas dos lineas es para que el servidor web sepa de que tipo son los los archivos que estamos enviando 			
 const static char icoIMG_Header[] = "HTTP/1.1 200 OK\nContent-type: image/ico\n\n";						// Indicamos que el dato anterior es de tipo image/ico 		I		
@@ -29,15 +92,6 @@ extern const uint8_t LEDsPage_html_start[] asm("_binary_LEDsPage_html_start");		
 extern const uint8_t LEDsPage_html_end[]   asm("_binary_LEDsPage_html_end");							// Final del archivo de la pagia web				I_____	Estas 4 lineas indican los archivos embebidos que se guardaran dentro de la esp32 (especificamente su tamaño)						
 extern const uint8_t favicon_ico_start[] asm("_binary_favicon_ico_start");								// Inicio del Archivo favicon.ico					I	
 extern const uint8_t favicon_ico_end[]   asm("_binary_favicon_ico_end");								// Final del Archivo favicon.ico				    I
-//  ------------------------------------------------------------------------------------------------------------------------------------------------- (Configuracion del las terminales)
-const int LED0 = 21; 						
-const int LED1 = 25;
-const int LED2 = 18;
-const int LED3 = 2;
-const int LED4 = 22;
-const int LED5 = 23;
-const int LED6 = 15;
-const int LED7 = 4;
 //  ------------------------------------------------------------------------------------------------------------------------------------------------- (Redes wifi(Station and access point) )
 uint8_t STA_MAC_Addr[6];						// Aqui vamos a almacenar nuestra direccion MAC
 static int Reintentos = 0;						// numero de intentos de coneccion a la red.
@@ -112,7 +166,7 @@ uint8_t STA_MAC_Addr[6];
 static void ResponderConexion(struct netconn *Coneccion) {
     struct netbuf *InputBuffer;			                        // Tipo de dato que almacena los datos recibidos de una conexion wifi (buffer porque asi se llama a un almacen de datos temporal)																	
     char *Buffer;					                            // Creo un puntero cadena para guardar el texto de la peticion html.					
-	u16_t buflen   ;			                                    // Longitud del Buffer																			
+	u16_t buflen;			                                    // Longitud del Buffer																			
 	err_t err;                                                  //  Tipo de dato para analizar error	
 	err = netconn_recv(Coneccion, &InputBuffer);                // Bloquea la tarea mientras espera que lleguen datos en la coneccion. InputBuffer contiene los datos recibidos.
 	if (err == ERR_OK) {
@@ -138,16 +192,15 @@ static void ResponderConexion(struct netconn *Coneccion) {
     //  ------------------------------------------------------------------------------------------------------------------------------------------------- Enviamos valores
         // Si se encontro la cadena Enviar valores 
         ptr = strstr(Buffer, "EnviarValoresActuales");
-        if(ptr != NULL) {
-            char Valores[3][7]; // Modificado: solo 3 LEDs
+        if(ptr != NULL) 
+        {
+            char Valor[1][8]; // Modificado: solo 3 LEDs
             char Respuesta[30]; // Modificado: tamaño de respuesta reducido
             
-            sprintf(Valores[0], "LED0=%d", gpio_get_level(LED0)); 
-            sprintf(Valores[1], "LED1=%d", gpio_get_level(LED1)); 
-            sprintf(Valores[2], "LED2=%d", gpio_get_level(LED2));
+            sprintf(Valor[0], "Anodo=%d", gpio_get_level(Anodo)); 
             
             // Almacena en respuesta el estado de los led con el siguiente formato
-            sprintf(Respuesta, "%s:%s:%s", Valores[0], Valores[1], Valores[2]); 
+            sprintf(Respuesta, "%s", Valor[0]); 
             
             printf("Se pide EnviarValoresActuales\n");
             // Se imprime la respuesta
@@ -159,37 +212,40 @@ static void ResponderConexion(struct netconn *Coneccion) {
          // Agrega esta línea para imprimir el contenido del buffer
         printf("Contenido del Buffer: %.*s\n", buflen, Buffer);
          //  ------------------------------------------------------------------------------------------------------------------------------------------------- Recibimos valores
-	   	ptr = strstr(Buffer, "LED0=0");
-	   	if(ptr != NULL) {
-		
-	   		gpio_set_level(LED0,0);
-	   		printf("Se recibio:LED0=0\n");
+	   	 //  ------------------------------------------------------------------------------------------------------------------------------------------------- Prender/Apagar leds
+	   	ptr = strstr(Buffer, "Anodo=0");
+	   	if(ptr != NULL) 
+	   	{
+			gpio_set_level(Anodo, 0);
+	   		printf("Se apaga el led \n");
 	   	}
-	   	ptr = strstr(Buffer, "LED0=1");
-	   	if(ptr != NULL) {
-	   		gpio_set_level(LED0,1);
-	   		printf("Se recibio:LED0=1\n");
+	   	ptr = strstr(Buffer, "Anodo=1");
+	   	if(ptr != NULL) 
+	   	{
+			gpio_set_level(Anodo, 1);
+	   		printf("Se prende el led  \n");
 	   	}
-	   	ptr = strstr(Buffer, "LED1=0");
-	   	if(ptr != NULL) {
-	   		gpio_set_level(LED1,0);
-	   		printf("Se recibio:LED1=0\n");
-	   	}
-	   	ptr = strstr(Buffer, "LED1=1");
-	   	if(ptr != NULL) {
-	   		gpio_set_level(LED1,1);
-	   		printf("Se recibio:LED1=1\n");
-	   	}
-	   	ptr = strstr(Buffer, "LED2=0");
-	   	if(ptr != NULL) {
-	   		gpio_set_level(LED2,0);
-	   		printf("Se recibio:LED2=0\n");
-	   	}
-	   	ptr = strstr(Buffer, "LED2=1");
-	   	if(ptr != NULL) {
-	   		gpio_set_level(LED2,1);
-	   		printf("Se recibio:LED2=1\n");
-	   	}
+	 
+
+	   //  ------------------------------------------------------------------------------------------------------------------------------------------------- Color regb
+	   ptr = strstr(Buffer, "RGB=");
+		if(ptr != NULL) {
+	    int r, g, b;
+	    sscanf(ptr, "RGB=%d,%d,%d", &r, &g, &b); // Extrae valores RGB
+	    
+	    // Mapea los valores (0-255) al duty cycle invertido (255-0) porque es ánodo común
+	    ledc_set_duty(LEDC_HIGH_SPEED_MODE, LEDC_CHANNEL_2, 255 - r); // Rojo (PWM_channel3)
+	    ledc_set_duty(LEDC_HIGH_SPEED_MODE, LEDC_CHANNEL_1, 255 - g); // Verde (PWM_channel2)
+	    ledc_set_duty(LEDC_HIGH_SPEED_MODE, LEDC_CHANNEL_0, 255 - b); // Azul (PWM_channel1)
+	    
+	    // Actualiza los duty cycles
+	    ledc_update_duty(LEDC_HIGH_SPEED_MODE, LEDC_CHANNEL_0);
+	    ledc_update_duty(LEDC_HIGH_SPEED_MODE, LEDC_CHANNEL_1);
+	    ledc_update_duty(LEDC_HIGH_SPEED_MODE, LEDC_CHANNEL_2);
+	    
+	    printf("Valores RGB recibidos: R=%d, G=%d, B=%d\n", r, g, b);
+}
+	   
 	}
 	netconn_close(Coneccion);																				// Cierra la coneccion.
 	netbuf_delete(InputBuffer);																				// Borra el buffer de entrada.
@@ -218,14 +274,34 @@ static void http_server(void *pvParameters) {			// Tarea del Servidor Web
 
 //  -------------------------------------------------------------------------------------------------------------------------------------------------
 void app_main() {
-	gpio_set_direction(LED0, GPIO_MODE_INPUT_OUTPUT);			// Configuracion de los Pines de Salida para los LEDs
-	gpio_set_direction(LED1, GPIO_MODE_INPUT_OUTPUT);
-	gpio_set_direction(LED2, GPIO_MODE_INPUT_OUTPUT);
-	gpio_set_direction(LED3, GPIO_MODE_INPUT_OUTPUT);
-	gpio_set_direction(LED4, GPIO_MODE_INPUT_OUTPUT);
-	gpio_set_direction(LED5, GPIO_MODE_INPUT_OUTPUT);
-	gpio_set_direction(LED6, GPIO_MODE_INPUT_OUTPUT);
-	gpio_set_direction(LED7, GPIO_MODE_INPUT_OUTPUT);
+	
+	//Conf
+	gpio_config_t ConfiguracionDeLasSalidas = {
+        .pin_bit_mask = ( 1ULL << Anodo ),
+        .mode = GPIO_MODE_OUTPUT,
+        .pull_up_en = GPIO_PULLUP_DISABLE,
+        .pull_down_en = GPIO_PULLDOWN_DISABLE,
+        .intr_type = GPIO_INTR_DISABLE
+    };
+    gpio_config(&ConfiguracionDeLasSalidas);
+    // VALORES INCIALES
+    gpio_set_level(Anodo, 0);
+    //gpio_set_level(LEDR,1);
+    // gpio_set_level(LEDG,1);
+   // gpio_set_level(LEDB,1);
+   
+	// Se aplican las configuraciones del PWm
+	ledc_timer_config(&PWM_timer);
+	ledc_timer_config(&PWM_timer1);
+	ledc_channel_config(&PWM_channel1);
+	ledc_channel_config(&PWM_channel2);
+	ledc_channel_config(&PWM_channel3);
+	
+	
+
+
+
+
 //  ------------------------------------------------------------------------------------------------------------------------------------------------
 	wifi_event_group = xEventGroupCreate();									// Creo el grupo de eventos para el WiFi.
 	esp_event_handler_instance_t instance_any_id;
@@ -243,10 +319,10 @@ void app_main() {
 	ESP_ERROR_CHECK(esp_event_handler_instance_register(IP_EVENT, IP_EVENT_STA_GOT_IP, &wifi_event_handler, NULL, &instance_got_ip)); 	 // Registra al manejador de eventos para cuando recibe una IP
 	wifi_config_t ap_config = {						// Crea la estructura de configuracion del punto de acceso.
 		.ap = {
-		.ssid = "MyESP_AP",							// Nombre de la red
-		.ssid_len = strlen("MyESP_AP"),				// Tamaño del nombre de la red
+		.ssid = "PIPE_ESP",							// Nombre de la red
+		.ssid_len = strlen("PIPE_ESP"),				// Tamaño del nombre de la red
 		.channel = 1,								// Canal de Comunicacion
-		.password = "1a2b3c4d",						// Clave
+		.password = "12345678",						// Clave
 		.max_connection = 10,						// Numero maximo de conecciones Simultaneas (De 4 a 10)
 		.authmode = WIFI_AUTH_WPA_WPA2_PSK      	// Si no se quiere password :WIFI_AUTH_OPEN;
 		},
