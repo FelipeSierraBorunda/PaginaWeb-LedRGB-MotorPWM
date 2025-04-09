@@ -12,7 +12,7 @@
 #include "lwip/netdb.h"
 #include "lwip/api.h"
 #include "lwip/err.h"
-
+#include <stdlib.h>  				// Necesaria para abs()
 //Para ledc
 #include "driver/ledc.h"
 #include "driver/gpio.h"
@@ -20,20 +20,29 @@
 #include "soc/ledc_reg.h"
 #include "stdio.h"
 
+#include "math.h"
+
 #include "string.h"
 
 // En este archivo se define el nombre de la red (ssid) a la que me quiero conectar, asi como su pasword.
 #include "MyNetInfo.h"	
 
 // ================================================= Constantes globales
-#define Anodo GPIO_NUM_25	
-#define LEDR GPIO_NUM_26	
-#define LEDG GPIO_NUM_33	
-#define LEDB GPIO_NUM_32	
-
-
+#define Anodo GPIO_NUM_25		// Anodo comun del led
+#define LEDR GPIO_NUM_26		//Salida del led rojo
+#define LEDG GPIO_NUM_33		//Salida del led verde
+#define LEDB GPIO_NUM_32		//Salida del led azul
+#define SERVOMOTOR GPIO_NUM_27	//Pwm del servomotor
+#define MIN 204
+#define MAX 400
+#define Enable GPIO_NUM_14		//Pwm del motor
+#define In1 GPIO_NUM_12			//Salida del In1 del puente H
+#define In2 GPIO_NUM_13			//Salida del In2 del puente H
+#define MINMotor 747
+#define MAXMotor 1024
+int EstadoMotor= 0;
 //================================================== Configuraciones =================================================
-// Configuracion del ledc timer
+	// Configuracion del ledc timer
 	ledc_timer_config_t PWM_timer = 
 	    {
 	        .duty_resolution = LEDC_TIMER_8_BIT, 		// resolution of PWM duty (1024)
@@ -42,49 +51,77 @@
 	        .timer_num = LEDC_TIMER_0,            		// timer index
 	        .clk_cfg = LEDC_APB_CLK,             		// Reloj de 80Mhz
 	    };
-	    ledc_timer_config_t PWM_timer1 = 
+	    ledc_timer_config_t PWM_Motortimer = 
 	    {
-	        .duty_resolution = LEDC_TIMER_8_BIT, 		// resolution of PWM duty (1024)
+	        .duty_resolution = LEDC_TIMER_10_BIT, 		// resolution of PWM duty (1024)
 	        .freq_hz = 10000,                      		// frequency of PWM signal
 	        .speed_mode = LEDC_HIGH_SPEED_MODE,      	// timer mode
 	        .timer_num = LEDC_TIMER_1,            		// timer index
 	        .clk_cfg = LEDC_APB_CLK,             		// Reloj de 80Mhz
 	    };
+		ledc_timer_config_t PWM_ServoTimer = 
+	    {
+	        .duty_resolution = LEDC_TIMER_12_BIT, 		// resolution of PWM duty (4095)
+	        .freq_hz = 50,                      		// frequency of PWM signal
+	        .speed_mode = LEDC_HIGH_SPEED_MODE,      	// timer mode
+	        .timer_num = LEDC_TIMER_2,            		// timer index
+	        .clk_cfg = LEDC_APB_CLK,             		// Reloj de 80Mhz
+	    };
 	 // Configuracion del canal del timer (cada ledc timer tiene dos canales)
+	 //Rojo (Red)
+	 ledc_channel_config_t LEDR_channel= 
+	 {
+		 .channel    = LEDC_CHANNEL_2,
+		 .duty       = 255, //Ciclo minimo de 325
+		 .gpio_num   = LEDR,
+		 .speed_mode = LEDC_HIGH_SPEED_MODE,
+		 .intr_type = LEDC_INTR_DISABLE,
+		 .hpoint     = 0,
+		 .timer_sel  = LEDC_TIMER_0
+	 };
+	 //Verde (green)
+	 ledc_channel_config_t LEDG_channel = 
+	 {
+		 .channel    = LEDC_CHANNEL_1,
+		 .duty       = 255, //Inicia apagado
+		 .gpio_num   = LEDG,
+		 .speed_mode = LEDC_HIGH_SPEED_MODE,
+		 .intr_type = LEDC_INTR_DISABLE,
+		 .hpoint     = 0,
+		 .timer_sel  = LEDC_TIMER_0
+	 };
 	 //Azul (blue)
-	 ledc_channel_config_t PWM_channel1 = 
+	 ledc_channel_config_t LEDB_channel = 
 	  {
 		  .channel    = LEDC_CHANNEL_0,
-		  .duty       = 255, //Ciclo minimo de 325
+		  .duty       = 255, //Inicia apagado
 	      .gpio_num   = LEDB,
 		  .speed_mode = LEDC_HIGH_SPEED_MODE,
 		  .intr_type = LEDC_INTR_DISABLE,
 		  .hpoint     = 0,
 		  .timer_sel  = LEDC_TIMER_0
 	  };
-	  //Verde (green)
-	  ledc_channel_config_t PWM_channel2 = 
-	  {
-		  .channel    = LEDC_CHANNEL_1,
-		  .duty       = 255, //Ciclo minimo de 325
-	      .gpio_num   = LEDG,
-		  .speed_mode = LEDC_HIGH_SPEED_MODE,
-		  .intr_type = LEDC_INTR_DISABLE,
-		  .hpoint     = 0,
-		  .timer_sel  = LEDC_TIMER_0
-	  };
-	  //Rojo (Red)
-	   ledc_channel_config_t PWM_channel3= 
-	  {
-		  .channel    = LEDC_CHANNEL_2,
-		  .duty       = 255, //Ciclo minimo de 325
-	      .gpio_num   = LEDR,
-		  .speed_mode = LEDC_HIGH_SPEED_MODE,
-		  .intr_type = LEDC_INTR_DISABLE,
-		  .hpoint     = 0,
-		  .timer_sel  = LEDC_TIMER_1
-	  };
-	  
+	  //SERVO (blue)
+	 ledc_channel_config_t SERVOMOTOR_channel = 
+	 {
+		 .channel    = LEDC_CHANNEL_4,
+		 .duty       = MIN, //Inicia en el grado inicial
+		 .gpio_num   = SERVOMOTOR,
+		 .speed_mode = LEDC_HIGH_SPEED_MODE,
+		 .intr_type = LEDC_INTR_DISABLE,
+		 .hpoint     = 0,
+		 .timer_sel  = LEDC_TIMER_2
+	 };
+	 ledc_channel_config_t MOTOR_channel = 
+	 {
+		 .channel    = LEDC_CHANNEL_3,
+		 .duty       = 500, // 1024 es el maximo
+		 .gpio_num   = Enable,
+		 .speed_mode = LEDC_HIGH_SPEED_MODE,
+		 .intr_type = LEDC_INTR_DISABLE,
+		 .hpoint     = 0,
+		 .timer_sel  = LEDC_TIMER_1
+	 };
 //  ------------------------------------------------------------------------------------------------------------------------------------------------- (Interpretacion del servidor)
 const static char HTML_Header[] = "HTTP/1.1 200 OK\nContent-type: text/html\nConnection: close\n\n";	// Indicamos que el dato anterior es de tipo html 			I_______Estas dos lineas es para que el servidor web sepa de que tipo son los los archivos que estamos enviando 			
 const static char icoIMG_Header[] = "HTTP/1.1 200 OK\nContent-type: image/ico\n\n";						// Indicamos que el dato anterior es de tipo image/ico 		I		
@@ -225,18 +262,17 @@ static void ResponderConexion(struct netconn *Coneccion) {
 			gpio_set_level(Anodo, 1);
 	   		printf("Se prende el led  \n");
 	   	}
-	 
-
-	   //  ------------------------------------------------------------------------------------------------------------------------------------------------- Color regb
+	   //  ------------------------------------------------------------------------------------------------------------------------------------------------- Color rgb
 	   ptr = strstr(Buffer, "RGB=");
-		if(ptr != NULL) {
+		if(ptr != NULL)
+		{
 	    int r, g, b;
 	    sscanf(ptr, "RGB=%d,%d,%d", &r, &g, &b); // Extrae valores RGB
 	    
 	    // Mapea los valores (0-255) al duty cycle invertido (255-0) porque es ánodo común
-	    ledc_set_duty(LEDC_HIGH_SPEED_MODE, LEDC_CHANNEL_2, 255 - r); // Rojo (PWM_channel3)
-	    ledc_set_duty(LEDC_HIGH_SPEED_MODE, LEDC_CHANNEL_1, 255 - g); // Verde (PWM_channel2)
-	    ledc_set_duty(LEDC_HIGH_SPEED_MODE, LEDC_CHANNEL_0, 255 - b); // Azul (PWM_channel1)
+	    ledc_set_duty(LEDC_HIGH_SPEED_MODE, LEDC_CHANNEL_2, 255 - r); // Rojo (LEDR_channel)
+	    ledc_set_duty(LEDC_HIGH_SPEED_MODE, LEDC_CHANNEL_1, 255 - g); // Verde (LEDG_channel)
+	    ledc_set_duty(LEDC_HIGH_SPEED_MODE, LEDC_CHANNEL_0, 255 - b); // Azul (LEDB_channel)
 	    
 	    // Actualiza los duty cycles
 	    ledc_update_duty(LEDC_HIGH_SPEED_MODE, LEDC_CHANNEL_0);
@@ -244,8 +280,88 @@ static void ResponderConexion(struct netconn *Coneccion) {
 	    ledc_update_duty(LEDC_HIGH_SPEED_MODE, LEDC_CHANNEL_2);
 	    
 	    printf("Valores RGB recibidos: R=%d, G=%d, B=%d\n", r, g, b);
-}
-	   
+		}
+		//  ------------------------------------------------------------------------------------------------------------------------------------------------- Control PWM
+		ptr = strstr(Buffer, "PWM=");
+		if(ptr != NULL)
+		{
+			int Grados;
+			int CicloDeTrabajo;
+			// Extrae el valor en grados
+			sscanf(ptr, "PWM=%d", &Grados); 
+			// Conversion a ciclo de trabjo
+			CicloDeTrabajo = MIN + ((Grados * (MAX - MIN)) / 90);
+			//Asignacion del ciclo de trabajo
+			ledc_set_duty(LEDC_HIGH_SPEED_MODE, LEDC_CHANNEL_4, CicloDeTrabajo); 
+			ledc_update_duty(LEDC_HIGH_SPEED_MODE, LEDC_CHANNEL_4);
+			// Impresion del grados
+			printf("El servo se movera a los %d grados\n", Grados);
+		}
+		//  ------------------------------------------------------------------------------------------------------------------------------------------------- Control Motor
+		ptr = strstr(Buffer, "VelocidadMotor=");
+		if(ptr != NULL)
+		{
+			if(EstadoMotor==1)
+			{
+				int Velocidad;
+				// Extrae el valor en grados
+				sscanf(ptr, "VelocidadMotor=%d", &Velocidad); 
+				
+				int VelocidadSinSigno = (Velocidad < 0) ? -Velocidad : Velocidad;
+				int multi=VelocidadSinSigno * (MAXMotor - MINMotor);
+				float factor = multi/100;
+				// Conversion a ciclo de trabjo
+				int CicloDeTrabajo = MINMotor +factor ;
+	
+				if(Velocidad<0)
+				{
+					printf("La velocidad negativa\n");
+					gpio_set_level(In1, 1);
+					gpio_set_level(In2, 0);
+					ledc_set_duty(LEDC_HIGH_SPEED_MODE, LEDC_CHANNEL_3, CicloDeTrabajo); 
+					ledc_update_duty(LEDC_HIGH_SPEED_MODE, LEDC_CHANNEL_3);
+				} else if (Velocidad>0)
+				{
+					printf("La velocidad es positivo\n");
+					gpio_set_level(In1, 0);
+					gpio_set_level(In2, 1);
+					ledc_set_duty(LEDC_HIGH_SPEED_MODE, LEDC_CHANNEL_3, CicloDeTrabajo); 
+					ledc_update_duty(LEDC_HIGH_SPEED_MODE, LEDC_CHANNEL_3);
+				}
+				// Impresion del grados
+				printf("La velocidad es: %d \n", Velocidad);
+				printf("La velocidad es: %f \n", factor);
+				printf("La CD es: %d \n", CicloDeTrabajo);
+			}
+			
+		}
+
+		//xd
+		ptr = strstr(Buffer, "Motor=0");
+		if(ptr != NULL) 
+		{
+			EstadoMotor=0;
+		 	gpio_set_level(In1, 0);
+			gpio_set_level(In2, 0);
+			printf("Se apaga el motor \n");
+		}
+		ptr = strstr(Buffer, "Motor=1");
+		if(ptr != NULL) 
+		{
+			EstadoMotor=1;
+		 	gpio_set_level(In1, 1);
+			gpio_set_level(In2, 0);
+			printf("Se prende el motor  \n");
+		}
+		ptr = strstr(Buffer, "Motor=2");
+		if(ptr != NULL) 
+		{
+			EstadoMotor=1;
+		 	gpio_set_level(In1, 0);
+			gpio_set_level(In2, 1);
+			printf("Se prende el motor  \n");
+		}
+		
 	}
 	netconn_close(Coneccion);																				// Cierra la coneccion.
 	netbuf_delete(InputBuffer);																				// Borra el buffer de entrada.
@@ -277,7 +393,8 @@ void app_main() {
 	
 	//Conf
 	gpio_config_t ConfiguracionDeLasSalidas = {
-        .pin_bit_mask = ( 1ULL << Anodo ),
+        .pin_bit_mask = ( 1ULL << Anodo| 1ULL << In1|
+			1ULL << In2  ),
         .mode = GPIO_MODE_OUTPUT,
         .pull_up_en = GPIO_PULLUP_DISABLE,
         .pull_down_en = GPIO_PULLDOWN_DISABLE,
@@ -290,18 +407,18 @@ void app_main() {
     // gpio_set_level(LEDG,1);
    // gpio_set_level(LEDB,1);
    
+   
 	// Se aplican las configuraciones del PWm
+	// Timers
 	ledc_timer_config(&PWM_timer);
-	ledc_timer_config(&PWM_timer1);
-	ledc_channel_config(&PWM_channel1);
-	ledc_channel_config(&PWM_channel2);
-	ledc_channel_config(&PWM_channel3);
-	
-	
-
-
-
-
+	ledc_timer_config(&PWM_Motortimer);
+	ledc_timer_config(&PWM_ServoTimer);
+	// Canales 
+	ledc_channel_config(&LEDR_channel);
+	ledc_channel_config(&LEDG_channel);
+	ledc_channel_config(&LEDB_channel);
+	ledc_channel_config(&SERVOMOTOR_channel);
+	ledc_channel_config(&MOTOR_channel);
 //  ------------------------------------------------------------------------------------------------------------------------------------------------
 	wifi_event_group = xEventGroupCreate();									// Creo el grupo de eventos para el WiFi.
 	esp_event_handler_instance_t instance_any_id;

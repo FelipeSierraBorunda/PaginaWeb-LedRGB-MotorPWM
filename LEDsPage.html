@@ -37,24 +37,87 @@
      <!-- Texto que indica estado del checkbox-->
     <label id="lblSwitch" for="Switch">Switch Apagado</label>
   </div>
-  
+
+  <h2>Control PWM</h2>
+  <div>
+    <!-- Deslizador-->
+    PWM: <input type="range" min="0" max="90" value="0" id="pwm" oninput="ActualizarValordelTextoPWM()">
+     <!-- Texto que muestra el valor del deslizador -->
+    <span id="pwmvalue">0</span>
+  </div>
+
+  <h2>Control Del Motor</h2>
+  <div>
+    <!-- Deslizador-->
+    Motor: <input type="range" min="-100" max="100" value="0" id="motor" oninput="ActualizarValordelTextoMotor()">
+     <!-- Texto que muestra el valor del deslizador -->
+    <span id="motorvalue">0</span>
+  </div>
+  <div>
+    <!-- Checkbox de encendido o apagado-->
+    <input type="checkbox" id="MotorSwitch" onchange="EstadoDelMotor('MotorSwitch')">
+    <!-- Texto que indica estado del checkbox-->
+   <label id="lblMotorSwitch" for="MotorSwitch">Motor Apagado</label>
+ </div>
   <script>
     //=======================================================================================================================
     let SwitchOn= false;
-    
-    function ActualizarValordelTexto() {
-      const r = document.getElementById('r').value;
-      const g = document.getElementById('g').value;
-      const b = document.getElementById('b').value;
-      
-      document.getElementById('rv').textContent = r;
-      document.getElementById('gv').textContent = g;
-      document.getElementById('bv').textContent = b;
-      
-      ActualizarVisualizacionDelColor();
-      sendRGB(r, g, b);
+    let MotorOn= false;
+    function ActualizarValordelTextoPWM()
+     {
+      const pwm= document.getElementById('pwm').value; //PWM
+      document.getElementById('pwmvalue').textContent = pwm;  //PWM
+      EnviarPosicionEnGrados(pwm);
     }
-    
+    function ActualizarValordelTextoMotor()
+     {
+      const motor= document.getElementById('motor').value; //Motor
+      document.getElementById('motorvalue').textContent = motor;  //Motor
+      EnviarVelocidadYSentidoDelMotor(motor);
+    }
+    function ActualizarValordelTexto()
+     {
+      const r = document.getElementById('r').value;   //RGB
+      const g = document.getElementById('g').value;   //..
+      const b = document.getElementById('b').value;   //..
+  
+      document.getElementById('rv').textContent = r;  //RGB
+      document.getElementById('gv').textContent = g;  //..
+      document.getElementById('bv').textContent = b;  //..
+  
+      ActualizarVisualizacionDelColor();
+      EnviarValoresRGB(r, g, b);
+    }
+    function EnviarValoresRGB(r, g, b) 
+    {  
+      const xhttp = new XMLHttpRequest();
+
+      const rValor = SwitchOn ? r : 0;
+      const gValor = SwitchOn ? g : 0;
+      const bValor = SwitchOn ? b : 0;
+      
+      xhttp.open("POST", `RGB=${rValor},${gValor},${bValor}`);
+      xhttp.send();
+    }
+    function EnviarPosicionEnGrados(pwm) 
+    {  
+      const xhttp = new XMLHttpRequest();
+      
+      const PWMValue = pwm;
+      
+      xhttp.open("POST", `PWM=${PWMValue}`);
+      xhttp.send();
+    }
+    function EnviarVelocidadYSentidoDelMotor(motor) 
+    {  
+      const xhttp = new XMLHttpRequest();
+      
+      const MotorValue = motor;
+      
+      xhttp.open("POST", `VelocidadMotor=${MotorValue}`);
+      xhttp.send();
+    }
+
     function ActualizarVisualizacionDelColor() {
     //si[?] r 'on' ->  entonces r='r.value' ->si no, entonces 0
       const r =  document.getElementById('r').value ;
@@ -69,7 +132,8 @@
       const xhttp = new XMLHttpRequest();
       var Mensaje;
       let Val = document.getElementById(N).checked;
-      
+      const Sentidomotor= document.getElementById('motor').value;
+
       if (Val == true) 
       {
         document.getElementById("lbl".concat(N)).innerHTML = N.concat(" Encendido");
@@ -89,17 +153,37 @@
       ActualizarVisualizacionDelColor();
       ActualizarValordelTexto();
     }
-    
-    function sendRGB(r, g, b) {
-      
+    function EstadoDelMotor(estado) 
+    {//N=Switch
       const xhttp = new XMLHttpRequest();
-      const rVal = SwitchOn ? r : 0;
-      const gVal = SwitchOn ? g : 0;
-      const bVal = SwitchOn ? b : 0;
+      var Mensaje;
+      let Val = document.getElementById(estado).checked;
+      const Sentidomotor= document.getElementById('motor').value;
+      if (Val == true) 
+      {
+        document.getElementById("lbl".concat(estado)).innerHTML = "Motor".concat(" Encendido");
+        if(Sentidomotor<0){
+          Mensaje = "Motor".concat("=1");
+        } else if(Sentidomotor>0){
+          Mensaje = "Motor".concat("=2");
+        }
+        MotorOn=true;
+      } 
+      else 
+      {
+        document.getElementById("lbl".concat(estado)).innerHTML = "Motor".concat(" Apagado");
+        Mensaje = "Motor".concat("=0");
+        MotorOn=false;
+      }
       
-      xhttp.open("POST", `RGB=${rVal},${gVal},${bVal}`);
+      xhttp.open("POST", Mensaje);
       xhttp.send();
+      
+      ActualizarVisualizacionDelColor();
+      ActualizarValordelTexto();
     }
+    
+   
     
     function PedirValores() {
       const xhttp = new XMLHttpRequest();
